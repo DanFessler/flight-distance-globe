@@ -1,18 +1,18 @@
 import "./style.css";
 
 function main() {
-  let canvas = document.createElement("canvas");
+  const canvas = document.createElement("canvas");
   canvas.width = 800;
   canvas.height = 600;
 
-  let ctx = canvas.getContext("2d");
+  const ctx = canvas.getContext("2d");
 
   document.body.appendChild(canvas);
 
   ctx.fillStyle = "red";
   ctx.fillRect(10, 10, 100, 100);
 
-  let game = new Game(canvas, ctx);
+  const game = new Game(canvas, ctx);
   game.start();
 }
 
@@ -65,7 +65,7 @@ class Game {
     }
 
     // create points distributed on a flat plane
-    // let size = Math.sqrt(numPoints);
+    // const size = Math.sqrt(numPoints);
     // console.log(size);
     // for (let x = 0; x < size; x++) {
     //   for (let y = 0; y < size; y++) {
@@ -89,7 +89,7 @@ class Game {
 
     // record distances between all points
     for (let i = 0; i < this.points.length; i++) {
-      let distances = [];
+      const distances = [];
       for (let j = 0; j < this.points.length; j++) {
         distances.push({
           id: j,
@@ -106,7 +106,7 @@ class Game {
 
     // randomly distribute the points throughout 3D space
     for (let i = 0; i < numPoints; i++) {
-      let point = this.points[i];
+      const point = this.points[i];
       const radius = Math.random() * 600; // Random distance from center
       const theta = Math.random() * 2 * Math.PI;
       const phi = Math.acos(2 * Math.random() - 1);
@@ -132,30 +132,33 @@ class Game {
 
   simulate() {
     for (let i = 0; i < this.points.length; i++) {
-      let point = this.points[i];
+      const point = this.points[i];
       for (let j = 0; j < point.distances.length; j++) {
-        let distanceObj = point.distances[j];
+        const distanceObj = point.distances[j];
         // if (distanceObj.distance > 80) continue;
-        let otherPoint = this.points[distanceObj.id];
+        const otherPoint = this.points[distanceObj.id];
 
         if (point === otherPoint) continue;
 
-        let dx = otherPoint.x - point.x;
-        let dy = otherPoint.y - point.y;
-        let dz = otherPoint.z - point.z;
-        let currentDistance = Math.sqrt(dx * dx + dy * dy + dz * dz);
-        // let currentDistance = greatCircleDistance(point, otherPoint);
+        const dx = otherPoint.x - point.x;
+        const dy = otherPoint.y - point.y;
+        const dz = otherPoint.z - point.z;
+        const currentDistance = Math.sqrt(dx * dx + dy * dy + dz * dz);
+        // const currentDistance = greatCircleDistance(point, otherPoint);
 
-        let dirX = dx / currentDistance;
-        let dirY = dy / currentDistance;
-        let dirZ = dz / currentDistance;
+        const dirX = dx / currentDistance;
+        const dirY = dy / currentDistance;
+        const dirZ = dz / currentDistance;
 
-        let targetX = point.x + dirX * (currentDistance - distanceObj.distance);
-        let targetY = point.y + dirY * (currentDistance - distanceObj.distance);
-        let targetZ = point.z + dirZ * (currentDistance - distanceObj.distance);
-        let target = { x: targetX, y: targetY, z: targetZ };
+        const targetX =
+          point.x + dirX * (currentDistance - distanceObj.distance);
+        const targetY =
+          point.y + dirY * (currentDistance - distanceObj.distance);
+        const targetZ =
+          point.z + dirZ * (currentDistance - distanceObj.distance);
+        const target = { x: targetX, y: targetY, z: targetZ };
 
-        let newPos = lerp3d(point, target, 0.001);
+        const newPos = lerp3d(point, target, 0.001);
         point.x = newPos.x;
         point.y = newPos.y;
         point.z = newPos.z;
@@ -163,7 +166,7 @@ class Game {
     }
 
     // find averaged origin
-    let origin = { x: 0, y: 0, z: 0 };
+    const origin = { x: 0, y: 0, z: 0 };
     for (let i = 0; i < this.points.length; i++) {
       origin.x += this.points[i].x;
       origin.y += this.points[i].y;
@@ -175,7 +178,7 @@ class Game {
 
     // center and rotate the points
     for (let i = 0; i < this.points.length; i++) {
-      let point = this.points[i];
+      const point = this.points[i];
       point.x -= origin.x;
       point.y -= origin.y;
       point.z -= origin.z;
@@ -212,7 +215,7 @@ class Game {
 
     // Draw connections first
     sortedPoints.forEach((point) => {
-      let distances = point.distances;
+      const distances = point.distances;
       // distances.sort((a, b) => a.distance - b.distance);
       // distances = distances.slice(0, 10);
       distances.forEach((distanceObj) => {
@@ -236,7 +239,7 @@ class Game {
             Math.max(-1, Math.min(1, difference / maxDifference)) / 2 + 0.5;
 
           // Red when negative (too close), green when positive (too far)
-          let color = hsvToRgb(ratio, 1, 1);
+          const color = hsvToRgb(ratio, 1, 1);
 
           const alpha = Math.max(0, Math.min(1, 1 - (point.z + 400) / 800));
 
@@ -265,11 +268,11 @@ class Game {
 
 function hsvToRgb(h, s, v) {
   let r, g, b;
-  let i = Math.floor(h * 6);
-  let f = h * 6 - i;
-  let p = v * (1 - s);
-  let q = v * (1 - f * s);
-  let t = v * (1 - (1 - f) * s);
+  const i = Math.floor(h * 6);
+  const f = h * 6 - i;
+  const p = v * (1 - s);
+  const q = v * (1 - f * s);
+  const t = v * (1 - (1 - f) * s);
   switch (i % 6) {
     case 0:
       [r, g, b] = [v, t, p];

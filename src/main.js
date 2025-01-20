@@ -1,15 +1,20 @@
 import "./style.css";
 
-let canvasEl = document.createElement("canvas");
-canvasEl.width = 800;
-canvasEl.height = 600;
+function main() {
+  let canvas = document.createElement("canvas");
+  canvas.width = 800;
+  canvas.height = 600;
 
-let ctx = canvasEl.getContext("2d");
+  let ctx = canvas.getContext("2d");
 
-document.body.appendChild(canvasEl);
+  document.body.appendChild(canvas);
 
-ctx.fillStyle = "red";
-ctx.fillRect(10, 10, 100, 100);
+  ctx.fillStyle = "red";
+  ctx.fillRect(10, 10, 100, 100);
+
+  let game = new Game(canvas, ctx);
+  game.start();
+}
 
 let numPoints = 30 ** 2;
 
@@ -37,8 +42,8 @@ function greatCircleDistance(a, b) {
 }
 
 class Game {
-  constructor() {
-    this.canvas = canvasEl;
+  constructor(canvas, ctx) {
+    this.canvas = canvas;
     this.ctx = ctx;
     this.interval = 1000 / 60;
     this.lastTime = 0;
@@ -300,5 +305,4 @@ function lerp3d(a, b, t) {
   };
 }
 
-let game = new Game();
-game.start();
+main();

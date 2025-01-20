@@ -2,10 +2,16 @@ import "./style.css";
 
 function main() {
   const canvas = document.createElement("canvas");
+  if (!canvas) {
+    throw new Error(`document.createElement("canvas") failed`);
+  }
   canvas.width = 800;
   canvas.height = 600;
 
   const ctx = canvas.getContext("2d");
+  if (!ctx) {
+    throw new Error(`canvasEl.getContext("2d") failed`);
+  }
 
   document.body.appendChild(canvas);
 
@@ -16,9 +22,28 @@ function main() {
   game.start();
 }
 
+type Vec = {
+  x: number;
+  y: number;
+  z: number;
+};
+
+type Point = {
+  id: number;
+  x: number;
+  y: number;
+  z: number;
+  distances: Distance[];
+};
+
+type Distance = {
+  id: number;
+  distance: number;
+};
+
 let numPoints = 30 ** 2;
 
-function greatCircleDistance(a, b) {
+function greatCircleDistance(a: Vec, b: Vec): number {
   // Assuming points a and b have x, y, z coordinates on a sphere
   // First convert to latitude/longitude
   const radius = Math.sqrt(a.x * a.x + a.y * a.y + a.z * a.z);
@@ -42,11 +67,15 @@ function greatCircleDistance(a, b) {
 }
 
 class Game {
-  constructor(canvas, ctx) {
+  canvas: HTMLCanvasElement;
+  ctx: CanvasRenderingContext2D;
+  interval: number = 1000 / 60;
+  lastTime: number = 0;
+  points: Point[];
+
+  constructor(canvas: HTMLCanvasElement, ctx: CanvasRenderingContext2D) {
     this.canvas = canvas;
     this.ctx = ctx;
-    this.interval = 1000 / 60;
-    this.lastTime = 0;
 
     this.points = [];
 
@@ -61,6 +90,7 @@ class Game {
         x: radius * Math.sin(phi) * Math.cos(theta),
         y: radius * Math.sin(phi) * Math.sin(theta),
         z: radius * Math.cos(phi),
+        distances: [],
       });
     }
 
@@ -75,6 +105,7 @@ class Game {
     //       x: lerp(-radius, radius, x / (size - 1)),
     //       y: lerp(-radius, radius, y / (size - 1)),
     //       z: 0,
+    //       distances: [],
     //     });
     //   }
     // }
@@ -89,24 +120,26 @@ class Game {
 
     // record distances between all points
     for (let i = 0; i < this.points.length; i++) {
-      const distances = [];
+      const point = this.points[i]!;
+      const distances: Distance[] = [];
       for (let j = 0; j < this.points.length; j++) {
+        const otherPoint = this.points[j]!;
         distances.push({
           id: j,
           distance: Math.sqrt(
-            Math.pow(this.points[i].x - this.points[j].x, 2) +
-              Math.pow(this.points[i].y - this.points[j].y, 2) +
-              Math.pow(this.points[i].z - this.points[j].z, 2)
+            Math.pow(point.x - otherPoint.x, 2) +
+              Math.pow(point.y - otherPoint.y, 2) +
+              Math.pow(point.z - otherPoint.z, 2)
           ),
           // distance: greatCircleDistance(this.points[i], this.points[j]),
         });
-        this.points[i].distances = distances;
+        point.distances = distances;
       }
     }
 
     // randomly distribute the points throughout 3D space
     for (let i = 0; i < numPoints; i++) {
-      const point = this.points[i];
+      const point = this.points[i]!;
       const radius = Math.random() * 600; // Random distance from center
       const theta = Math.random() * 2 * Math.PI;
       const phi = Math.acos(2 * Math.random() - 1);
@@ -132,11 +165,11 @@ class Game {
 
   simulate() {
     for (let i = 0; i < this.points.length; i++) {
-      const point = this.points[i];
+      const point = this.points[i]!;
       for (let j = 0; j < point.distances.length; j++) {
-        const distanceObj = point.distances[j];
+        const distanceObj = point.distances[j]!;
         // if (distanceObj.distance > 80) continue;
-        const otherPoint = this.points[distanceObj.id];
+        const otherPoint = this.points[distanceObj.id]!;
 
         if (point === otherPoint) continue;
 
@@ -168,9 +201,10 @@ class Game {
     // find averaged origin
     const origin = { x: 0, y: 0, z: 0 };
     for (let i = 0; i < this.points.length; i++) {
-      origin.x += this.points[i].x;
-      origin.y += this.points[i].y;
-      origin.z += this.points[i].z;
+      const point = this.points[i]!;
+      origin.x += point.x;
+      origin.y += point.y;
+      origin.z += point.z;
     }
     origin.x /= this.points.length;
     origin.y /= this.points.length;
@@ -178,7 +212,7 @@ class Game {
 
     // center and rotate the points
     for (let i = 0; i < this.points.length; i++) {
-      const point = this.points[i];
+      const point = this.points[i]!;
       point.x -= origin.x;
       point.y -= origin.y;
       point.z -= origin.z;
@@ -266,7 +300,7 @@ class Game {
   }
 }
 
-function hsvToRgb(h, s, v) {
+function hsvToRgb(h: number, s: number, v: number): [number, number, number] {
   let r, g, b;
   const i = Math.floor(h * 6);
   const f = h * 6 - i;
@@ -289,18 +323,18 @@ function hsvToRgb(h, s, v) {
     case 4:
       [r, g, b] = [t, p, v];
       break;
-    case 5:
+    default:
       [r, g, b] = [v, p, q];
       break;
   }
   return [Math.round(r * 255), Math.round(g * 255), Math.round(b * 255)];
 }
 
-function lerp(a, b, t) {
+function lerp(a: number, b: number, t: number): number {
   return a + (b - a) * t;
 }
 
-function lerp3d(a, b, t) {
+function lerp3d(a: Vec, b: Vec, t: number): Vec {
   return {
     x: a.x + (b.x - a.x) * t,
     y: a.y + (b.y - a.y) * t,

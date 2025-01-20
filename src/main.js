@@ -53,8 +53,8 @@ class Game {
 
       this.points.push({
         id: i,
-        x: this.canvas.width / 2 + radius * Math.sin(phi) * Math.cos(theta),
-        y: this.canvas.height / 2 + radius * Math.sin(phi) * Math.sin(theta),
+        x: radius * Math.sin(phi) * Math.cos(theta),
+        y: radius * Math.sin(phi) * Math.sin(theta),
         z: radius * Math.cos(phi),
       });
     }
@@ -64,10 +64,11 @@ class Game {
     // console.log(size);
     // for (let x = 0; x < size; x++) {
     //   for (let y = 0; y < size; y++) {
+    //     const radius = 200;
     //     this.points.push({
     //       id: y + x * size,
-    //       x: x * 25,
-    //       y: y * 25,
+    //       x: lerp(-radius, radius, x / (size - 1)),
+    //       y: lerp(-radius, radius, y / (size - 1)),
     //       z: 0,
     //     });
     //   }
@@ -105,10 +106,8 @@ class Game {
       const theta = Math.random() * 2 * Math.PI;
       const phi = Math.acos(2 * Math.random() - 1);
 
-      point.x =
-        this.canvas.width / 2 + radius * Math.sin(phi) * Math.cos(theta);
-      point.y =
-        this.canvas.height / 2 + radius * Math.sin(phi) * Math.sin(theta);
+      point.x = radius * Math.sin(phi) * Math.cos(theta);
+      point.y = radius * Math.sin(phi) * Math.sin(theta);
       point.z = radius * Math.cos(phi);
     }
 
@@ -156,23 +155,31 @@ class Game {
         point.y = newPos.y;
         point.z = newPos.z;
       }
-      // find averaged origin
-      let origin = { x: 0, y: 0, z: 0 };
-      for (let i = 0; i < this.points.length; i++) {
-        origin.x += this.points[i].x;
-        origin.y += this.points[i].y;
-        origin.z += this.points[i].z;
-      }
-      origin.x /= this.points.length;
-      origin.y /= this.points.length;
-      origin.z /= this.points.length;
+    }
 
-      // rotate point around the average origin
-      const dx = point.x - origin.x;
-      const dz = point.z - origin.z;
+    // find averaged origin
+    let origin = { x: 0, y: 0, z: 0 };
+    for (let i = 0; i < this.points.length; i++) {
+      origin.x += this.points[i].x;
+      origin.y += this.points[i].y;
+      origin.z += this.points[i].z;
+    }
+    origin.x /= this.points.length;
+    origin.y /= this.points.length;
+    origin.z /= this.points.length;
+
+    // center and rotate the points
+    for (let i = 0; i < this.points.length; i++) {
+      let point = this.points[i];
+      point.x -= origin.x;
+      point.y -= origin.y;
+      point.z -= origin.z;
+
       const angle = 0.001;
-      point.x = origin.x + dx * Math.cos(angle) - dz * Math.sin(angle);
-      point.z = origin.z + dx * Math.sin(angle) + dz * Math.cos(angle);
+      const x = point.x;
+      const z = point.z;
+      point.x = x * Math.cos(angle) - z * Math.sin(angle);
+      point.z = x * Math.sin(angle) + z * Math.cos(angle);
     }
   }
 
@@ -189,16 +196,14 @@ class Game {
       const scale = projectionDistance / (projectionDistance + point.z);
       return {
         ...point,
-        projectedX:
-          this.canvas.width / 2 + (point.x - this.canvas.width / 2) * scale,
-        projectedY:
-          this.canvas.height / 2 + (point.y - this.canvas.height / 2) * scale,
+        projectedX: this.canvas.width / 2 + point.x * scale,
+        projectedY: this.canvas.height / 2 + point.y * scale,
         scale: scale,
       };
     });
 
     // Sort points by z for proper rendering order
-    const sortedPoints = [...projectedPoints].sort((a, b) => b.z - a.z);
+    const sortedPoints = projectedPoints.toSorted((a, b) => b.z - a.z);
 
     // Draw connections first
     sortedPoints.forEach((point) => {
@@ -281,6 +286,10 @@ function hsvToRgb(h, s, v) {
       break;
   }
   return [Math.round(r * 255), Math.round(g * 255), Math.round(b * 255)];
+}
+
+function lerp(a, b, t) {
+  return a + (b - a) * t;
 }
 
 function lerp3d(a, b, t) {

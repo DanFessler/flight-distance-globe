@@ -1,7 +1,4 @@
 import "./style.css";
-import javascriptLogo from "./javascript.svg";
-import viteLogo from "/vite.svg";
-import { setupCounter } from "./counter.js";
 
 let canvasEl = document.createElement("canvas");
 canvasEl.width = 800;
@@ -296,5 +293,3 @@ function lerp3d(a, b, t) {
 
 let game = new Game();
 game.start();
-
-setupCounter(document.querySelector("#counter"));

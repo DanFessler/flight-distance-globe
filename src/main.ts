@@ -1,5 +1,7 @@
 import "./style.css";
 
+import * as OF from "./datasets/openflights";
+
 function main() {
   const canvas = document.createElement("canvas");
   if (!canvas) {
@@ -41,31 +43,6 @@ type Distance = {
   distance: number;
 };
 
-let numPoints = 30 ** 2;
-
-function greatCircleDistance(a: Vec, b: Vec): number {
-  // Assuming points a and b have x, y, z coordinates on a sphere
-  // First convert to latitude/longitude
-  const radius = Math.sqrt(a.x * a.x + a.y * a.y + a.z * a.z);
-
-  // Convert cartesian to spherical coordinates (latitude and longitude)
-  const lat1 = Math.asin(a.z / radius);
-  const lon1 = Math.atan2(a.y, a.x);
-  const lat2 = Math.asin(b.z / radius);
-  const lon2 = Math.atan2(b.y, b.x);
-
-  // Haversine formula
-  const dLat = lat2 - lat1;
-  const dLon = lon2 - lon1;
-  const havLat = Math.sin(dLat / 2) * Math.sin(dLat / 2);
-  const havLon = Math.sin(dLon / 2) * Math.sin(dLon / 2);
-
-  const a_term = havLat + Math.cos(lat1) * Math.cos(lat2) * havLon;
-  const c = 2 * Math.atan2(Math.sqrt(a_term), Math.sqrt(1 - a_term));
-
-  return radius * c; // Distance in same units as radius
-}
-
 class Game {
   canvas: HTMLCanvasElement;
   ctx: CanvasRenderingContext2D;
@@ -79,77 +56,45 @@ class Game {
 
     this.points = [];
 
-    // create points distributed on the surface of a sphere
-    for (let i = 0; i < numPoints; i++) {
-      const phi = Math.acos(-1 + (2 * i) / numPoints);
-      const theta = Math.PI * (1 + Math.sqrt(5)) * i;
-      const radius = 200;
-
+    // Initialization. TODO: converge successfully without initialization with
+    // real data.
+    const positionFunction = OF.globePosition;
+    // const positionFunction = OF.gleasonPosition;
+    for (const position of OF.getPositions(positionFunction)) {
       this.points.push({
-        id: i,
-        x: radius * Math.sin(phi) * Math.cos(theta),
-        y: radius * Math.sin(phi) * Math.sin(theta),
-        z: radius * Math.cos(phi),
+        id: this.points.length,
+        x: position[0],
+        y: position[1],
+        z: position[2],
         distances: [],
       });
     }
 
-    // create points distributed on a flat plane
-    // const size = Math.sqrt(numPoints);
-    // console.log(size);
-    // for (let x = 0; x < size; x++) {
-    //   for (let y = 0; y < size; y++) {
-    //     const radius = 200;
-    //     this.points.push({
-    //       id: y + x * size,
-    //       x: lerp(-radius, radius, x / (size - 1)),
-    //       y: lerp(-radius, radius, y / (size - 1)),
-    //       z: 0,
-    //       distances: [],
-    //     });
-    //   }
+    // const numPoints = openFlights.getNumAirports();
+
+    // // uniformly distribute the points throughout a sphere
+    // for (let i = 0; i < numPoints; i++) {
+    //   const radius = Math.cbrt(Math.random()) * 7000; // Random distance from center
+    //   const theta = Math.random() * 2 * Math.PI;
+    //   const phi = Math.acos(2 * Math.random() - 1);
+    //   const sinPhi = Math.sin(phi);
+
+    //   this.points[i] = {
+    //     id: i,
+    //     x: radius * sinPhi * Math.cos(theta),
+    //     y: radius * sinPhi * Math.sin(theta),
+    //     z: radius * Math.cos(phi),
+    //     distances: [],
+    //   };
     // }
 
-    // randomly remove points
-    const pointsToRemove = 0;
-    for (let i = 0; i < pointsToRemove; i++) {
-      const index = Math.floor(Math.random() * this.points.length);
-      this.points.splice(index, 1);
+    // const distanceFunction = OF.globeDistance;
+    const distanceFunction = OF.globeChordDistance;
+    // const distanceFunction = OF.gleasonDistance;
+    for (const [ix1, ix2, distance] of OF.getDistances(distanceFunction)) {
+      this.points[ix1]!.distances.push({ id: ix2, distance });
+      this.points[ix2]!.distances.push({ id: ix1, distance });
     }
-    numPoints = this.points.length;
-
-    // record distances between all points
-    for (let i = 0; i < this.points.length; i++) {
-      const point = this.points[i]!;
-      const distances: Distance[] = [];
-      for (let j = 0; j < this.points.length; j++) {
-        const otherPoint = this.points[j]!;
-        distances.push({
-          id: j,
-          distance: Math.sqrt(
-            Math.pow(point.x - otherPoint.x, 2) +
-              Math.pow(point.y - otherPoint.y, 2) +
-              Math.pow(point.z - otherPoint.z, 2)
-          ),
-          // distance: greatCircleDistance(this.points[i], this.points[j]),
-        });
-        point.distances = distances;
-      }
-    }
-
-    // randomly distribute the points throughout 3D space
-    for (let i = 0; i < numPoints; i++) {
-      const point = this.points[i]!;
-      const radius = Math.random() * 600; // Random distance from center
-      const theta = Math.random() * 2 * Math.PI;
-      const phi = Math.acos(2 * Math.random() - 1);
-
-      point.x = radius * Math.sin(phi) * Math.cos(theta);
-      point.y = radius * Math.sin(phi) * Math.sin(theta);
-      point.z = radius * Math.cos(phi);
-    }
-
-    console.log(this.points);
   }
 
   start() {
@@ -170,8 +115,6 @@ class Game {
         const distanceObj = point.distances[j]!;
         // if (distanceObj.distance > 80) continue;
         const otherPoint = this.points[distanceObj.id]!;
-
-        if (point === otherPoint) continue;
 
         const dx = otherPoint.x - point.x;
         const dy = otherPoint.y - point.y;

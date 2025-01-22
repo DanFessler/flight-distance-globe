@@ -24,6 +24,11 @@ function main() {
   game.start();
 }
 
+/** An index in the points array. */
+type Ix = number;
+/** An index in the dataset. */
+type DatasetIx = number;
+
 type Vec = {
   x: number;
   y: number;
@@ -31,7 +36,7 @@ type Vec = {
 };
 
 type Point = {
-  id: number;
+  datasetIx: DatasetIx;
   x: number;
   y: number;
   z: number;
@@ -39,7 +44,9 @@ type Point = {
 };
 
 type Distance = {
-  id: number;
+  /** An index in the points array (not the dataset). */
+  ix: Ix;
+  /** The desired distance. */
   distance: number;
 };
 
@@ -48,53 +55,181 @@ class Game {
   ctx: CanvasRenderingContext2D;
   interval: number = 1000 / 60;
   lastTime: number = 0;
+
+  /** The number of iterations to wait until adding the next airport. */
+  addNextAirportInterval: number = 5;
+  addNextAirportIterations: number = 0;
+
+  /** Established airports. Only connected to each other. */
   points: Point[];
+  /** A map from dataset indices to airports array indices. */
+  airportIndices: Map<DatasetIx, Ix>;
+  /** Unestablished routes from the established airports. Directional. */
+  nextRoutes: Map<DatasetIx, [DatasetIx, number][]>;
+  /**
+   * The rest of the routes. Directional and initially stored once for each
+   * direction.
+   */
+  futureRoutes: Map<DatasetIx, Map<DatasetIx, number>>;
 
   constructor(canvas: HTMLCanvasElement, ctx: CanvasRenderingContext2D) {
     this.canvas = canvas;
     this.ctx = ctx;
 
     this.points = [];
-
-    // Initialization. TODO: converge successfully without initialization with
-    // real data.
-    const positionFunction = OF.globePosition;
-    // const positionFunction = OF.gleasonPosition;
-    for (const position of OF.getPositions(positionFunction)) {
-      this.points.push({
-        id: this.points.length,
-        x: position[0],
-        y: position[1],
-        z: position[2],
-        distances: [],
-      });
-    }
-
-    // const numPoints = openFlights.getNumAirports();
-
-    // // uniformly distribute the points throughout a sphere
-    // for (let i = 0; i < numPoints; i++) {
-    //   const radius = Math.cbrt(Math.random()) * 7000; // Random distance from center
-    //   const theta = Math.random() * 2 * Math.PI;
-    //   const phi = Math.acos(2 * Math.random() - 1);
-    //   const sinPhi = Math.sin(phi);
-
-    //   this.points[i] = {
-    //     id: i,
-    //     x: radius * sinPhi * Math.cos(theta),
-    //     y: radius * sinPhi * Math.sin(theta),
-    //     z: radius * Math.cos(phi),
-    //     distances: [],
-    //   };
-    // }
+    this.airportIndices = new Map();
+    this.nextRoutes = new Map();
+    this.futureRoutes = new Map();
 
     // const distanceFunction = OF.globeDistance;
     const distanceFunction = OF.globeChordDistance;
     // const distanceFunction = OF.gleasonDistance;
     for (const [ix1, ix2, distance] of OF.getDistances(distanceFunction)) {
-      this.points[ix1]!.distances.push({ id: ix2, distance });
-      this.points[ix2]!.distances.push({ id: ix1, distance });
+      this.addFutureRoute(ix1, ix2, distance);
     }
+
+    this.addInitialAirport();
+  }
+
+  /** Add a route which is not connected to the established airports. */
+  addFutureRoute(ix1: DatasetIx, ix2: DatasetIx, distance: number): void {
+    getMapValueOrSetDefault(this.futureRoutes, ix1, () => new Map()).set(
+      ix2,
+      distance
+    );
+    getMapValueOrSetDefault(this.futureRoutes, ix2, () => new Map()).set(
+      ix1,
+      distance
+    );
+  }
+
+  /**
+   * Move a future route to next routes. To be used when an airport is being
+   * added, potentially making some of the future routes connected to it.
+   */
+  moveToNextRoutes(ix: DatasetIx): void {
+    const futureRouteEntry = this.futureRoutes.get(ix);
+    if (futureRouteEntry === undefined) {
+      // No future routes for the airport.
+      return;
+    }
+    this.futureRoutes.delete(ix);
+
+    const nextRouteEntry = Array.from(futureRouteEntry);
+    this.nextRoutes.set(ix, nextRouteEntry);
+  }
+
+  addInitialAirport(): void {
+    if (this.points.length > 0) {
+      throw new Error("Initial airport already added");
+    }
+
+    // Pick a random starting point.
+    const startIx = Math.floor(Math.random() * OF.getNumAirports());
+
+    const point = { datasetIx: startIx, x: 0, y: 0, z: 0, distances: [] };
+
+    const routes = this.futureRoutes.get(startIx);
+    if (routes === undefined) {
+      throw new Error(`No routes for airport ${startIx}`);
+    }
+    this.futureRoutes.delete(startIx);
+
+    for (const [otherIx] of routes) {
+      // The connections to unestablished airports (i.e. all of them at this
+      // moment) will not be added to the point, but they still reside as
+      // outgoing routes from the airports which will eventually be connected
+      // to this one.
+
+      this.moveToNextRoutes(otherIx);
+    }
+
+    this.airportIndices.set(startIx, 0);
+    this.points.push(point);
+
+    console.debug("Added initial airport", point);
+  }
+
+  /**
+   * Add the next airport from nextRoutes if any. Returns true if one was
+   * added.
+   */
+  addNextAirport(): boolean {
+    let chosenIx: DatasetIx = -1;
+    let chosenRoutes: [DatasetIx, number][] = [];
+    let chosenRoutesEstablished: [DatasetIx, number][] = [];
+
+    // Find the airport with the most connections to the established airports.
+    for (const [ix, routes] of this.nextRoutes) {
+      // The connections to unestablished airports will not be added to the
+      // point, but they still reside as outgoing routes from the airports
+      // which will eventually be connected to this one.
+      const routesEstablished = routes.filter(([otherIx]) =>
+        this.airportIndices.has(otherIx)
+      );
+
+      if (routesEstablished.length > chosenRoutesEstablished.length) {
+        chosenIx = ix;
+        chosenRoutes = routes;
+        chosenRoutesEstablished = routesEstablished;
+      }
+    }
+
+    if (chosenIx < 0) {
+      console.debug("No airports to add");
+      return false;
+    }
+    if (chosenRoutesEstablished.length === 0) {
+      throw new Error(`Empty established routes for airport ${chosenIx}`);
+    }
+
+    this.nextRoutes.delete(chosenIx);
+
+    const point: Point = {
+      datasetIx: chosenIx,
+      x: 0,
+      y: 0,
+      z: 0,
+      distances: [],
+    };
+
+    for (const [otherIx, distance] of chosenRoutesEstablished) {
+      const otherPointIx = this.airportIndices.get(otherIx);
+      if (otherPointIx === undefined) {
+        throw new Error(`arrayIx not found for datasetIx ${otherIx}`);
+      }
+      const otherPoint = this.points[otherPointIx];
+      if (otherPoint === undefined) {
+        throw new Error(
+          `Point not found for datasetIx ${otherIx}, arrayIx ${otherPointIx}`
+        );
+      }
+
+      // Connect the established airports.
+      point.distances.push({ ix: otherPointIx, distance });
+      otherPoint.distances.push({ ix: this.points.length, distance });
+
+      // Use the average of the connected established airports as the initial
+      // position.
+      point.x += otherPoint.x;
+      point.y += otherPoint.y;
+      point.z += otherPoint.z;
+    }
+
+    point.x /= chosenRoutesEstablished.length;
+    point.y /= chosenRoutesEstablished.length;
+    point.z /= chosenRoutesEstablished.length;
+
+    for (const [otherIx] of chosenRoutes) {
+      this.moveToNextRoutes(otherIx);
+    }
+
+    this.airportIndices.set(chosenIx, this.points.length);
+    this.points.push(point);
+
+    console.debug("Added airport", point);
+
+    return true;
   }
 
   start() {
@@ -106,6 +241,14 @@ class Game {
     this.simulate();
     this.render();
     requestAnimationFrame(this.update.bind(this));
+
+    if (this.nextRoutes.size > 0) {
+      ++this.addNextAirportIterations;
+      if (this.addNextAirportIterations >= this.addNextAirportInterval) {
+        this.addNextAirportIterations = 0;
+        this.addNextAirport();
+      }
+    }
   }
 
   simulate() {
@@ -114,7 +257,7 @@ class Game {
       for (let j = 0; j < point.distances.length; j++) {
         const distanceObj = point.distances[j]!;
         // if (distanceObj.distance > 80) continue;
-        const otherPoint = this.points[distanceObj.id]!;
+        const otherPoint = this.points[distanceObj.ix]!;
 
         const dx = otherPoint.x - point.x;
         const dy = otherPoint.y - point.y;
@@ -122,9 +265,21 @@ class Game {
         const currentDistance = Math.sqrt(dx * dx + dy * dy + dz * dz);
         // const currentDistance = greatCircleDistance(point, otherPoint);
 
-        const dirX = dx / currentDistance;
-        const dirY = dy / currentDistance;
-        const dirZ = dz / currentDistance;
+        let dirX: number, dirY: number, dirZ: number;
+        if (currentDistance > 0) {
+          dirX = dx / currentDistance;
+          dirY = dy / currentDistance;
+          dirZ = dz / currentDistance;
+        } else {
+          // If the points are at the same position, choose a random direction.
+          dirX = Math.random() * 2 - 1;
+          dirY = Math.random() * 2 - 1;
+          dirZ = Math.random() * 2 - 1;
+          const dirLength = Math.sqrt(dirX * dirX + dirY * dirY + dirZ * dirZ);
+          dirX /= dirLength;
+          dirY /= dirLength;
+          dirZ /= dirLength;
+        }
 
         const targetX =
           point.x + dirX * (currentDistance - distanceObj.distance);
@@ -191,13 +346,14 @@ class Game {
     const sortedPoints = projectedPoints.toSorted((a, b) => b.z - a.z);
 
     // Draw connections first
-    sortedPoints.forEach((point) => {
+    for (let ix = 0; ix < sortedPoints.length; ix++) {
+      const point = sortedPoints[ix]!;
       const distances = point.distances;
       // distances.sort((a, b) => a.distance - b.distance);
       // distances = distances.slice(0, 10);
       distances.forEach((distanceObj) => {
-        const otherPoint = projectedPoints[distanceObj.id];
-        // const otherPoint = projectedPoints.find((p) => p.id === distanceObj.id);
+        const otherPoint = projectedPoints[distanceObj.ix];
+        // const otherPoint = projectedPoints.find((p) => p.ix === distanceObj.ix);
         if (!otherPoint) return;
         // console.log("sorted", sortedPoints);
 
@@ -208,7 +364,7 @@ class Game {
         const actualDistance = Math.sqrt(dx * dx + dy * dy + dz * dz);
         if (actualDistance > 35) return;
 
-        if (distanceObj.id > point.id) {
+        if (distanceObj.ix > ix) {
           // Calculate difference ratio between actual and target distance
           const difference = actualDistance - distanceObj.distance;
           const maxDifference = 200; // Adjust this to control color intensity
@@ -227,7 +383,7 @@ class Game {
           this.ctx.stroke();
         }
       });
-    });
+    }
 
     // Draw points on top
     // sortedPoints.forEach((point) => {
@@ -283,6 +439,21 @@ function lerp3d(a: Vec, b: Vec, t: number): Vec {
     y: a.y + (b.y - a.y) * t,
     z: a.z + (b.z - a.z) * t,
   };
+}
+
+function getMapValueOrSetDefault<K, V>(
+  map: Map<K, V>,
+  key: K,
+  defaultValue: () => V
+): V {
+  let value = map.get(key);
+  if (value !== undefined) {
+    return value;
+  }
+
+  value = defaultValue();
+  map.set(key, value);
+  return value;
 }
 
 main();
